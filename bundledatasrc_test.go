@@ -6,7 +6,6 @@ package charm
 import (
 	"archive/zip"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,29 +21,40 @@ type BundleDataSourceSuite struct {
 
 var _ = gc.Suite(&BundleDataSourceSuite{})
 
+var bundlePath = "internal/test-charm-repo/bundle/wordpress-multidoc/bundle.yaml"
+
 func (s *BundleDataSourceSuite) TestReadBundleFromLocalFile(c *gc.C) {
 	path := bundleDirPath(c, "wordpress-multidoc")
 	src, err := LocalBundleDataSource(filepath.Join(path, "bundle.yaml"))
 	c.Assert(err, gc.IsNil)
-	assertBundleSourceProcessed(c, src)
+
+	raw, err := os.ReadFile(bundlePath)
+	c.Assert(err, jc.ErrorIsNil)
+	assertBundleSourceProcessed(c, src, string(raw))
 }
 
 func (s *BundleDataSourceSuite) TestReadBundleFromExplodedArchiveFolder(c *gc.C) {
 	path := bundleDirPath(c, "wordpress-multidoc")
 	src, err := LocalBundleDataSource(path)
 	c.Assert(err, gc.IsNil)
-	assertBundleSourceProcessed(c, src)
+
+	raw, err := os.ReadFile(bundlePath)
+	c.Assert(err, jc.ErrorIsNil)
+	assertBundleSourceProcessed(c, src, string(raw))
 }
 
 func (s *BundleDataSourceSuite) TestReadBundleFromArchive(c *gc.C) {
 	path := archiveBundleDirPath(c, "wordpress-multidoc")
 	src, err := LocalBundleDataSource(path)
 	c.Assert(err, gc.IsNil)
-	assertBundleSourceProcessed(c, src)
+
+	raw, err := os.ReadFile(bundlePath)
+	c.Assert(err, jc.ErrorIsNil)
+	assertBundleSourceProcessed(c, src, string(raw))
 }
 
 func (s *BundleDataSourceSuite) TestReadBundleFromStream(c *gc.C) {
-	r := strings.NewReader(`
+	bundle := `
 applications:
   wordpress:
     charm: wordpress
@@ -68,18 +78,19 @@ applications:
         acl:
           admin: "admin"
           foo: "consume"
-`)
+`
 
-	src, err := StreamBundleDataSource(r, "https://example.com")
+	src, err := StreamBundleDataSource(strings.NewReader(bundle), "https://example.com")
 	c.Assert(err, gc.IsNil)
-	assertBundleSourceProcessed(c, src)
+	assertBundleSourceProcessed(c, src, bundle)
 }
 
-func assertBundleSourceProcessed(c *gc.C, src BundleDataSource) {
+func assertBundleSourceProcessed(c *gc.C, src BundleDataSource, bundle string) {
 	parts := src.Parts()
 	c.Assert(parts, gc.HasLen, 3)
 	assertFieldPresent(c, parts[1], "applications.wordpress.offers.offer1.endpoints")
 	assertFieldPresent(c, parts[2], "applications.wordpress.offers.offer1.acl.admin")
+	c.Assert(string(src.BundleBytes()), gc.Equals, bundle)
 }
 
 func assertFieldPresent(c *gc.C, part *BundleDataPart, path string) {
@@ -101,7 +112,7 @@ func assertFieldPresent(c *gc.C, part *BundleDataPart, path string) {
 }
 
 func (s *BundleDataSourceSuite) TestParseBundlePartsStrict(c *gc.C) {
-	r := strings.NewReader(`
+	b := []byte(`
 applications:
   wordpress:
     charm: wordpress
@@ -128,7 +139,7 @@ applications:
           foo: "consume"
 `)
 
-	parts, err := parseBundleParts(r)
+	parts, err := parseBundleParts(b)
 	c.Assert(err, gc.IsNil)
 	c.Assert(parts, gc.HasLen, 3)
 	c.Assert(parts[0].UnmarshallError, gc.NotNil)
@@ -148,7 +159,7 @@ func (s *BundleDataSourceSuite) TestResolveAbsoluteFileInclude(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	expContent := "example content\n"
-	c.Assert(ioutil.WriteFile(target, []byte(expContent), os.ModePerm), gc.IsNil)
+	c.Assert(os.WriteFile(target, []byte(expContent), os.ModePerm), gc.IsNil)
 
 	ds := new(resolvedBundleDataSource)
 
@@ -163,7 +174,7 @@ func (s *BundleDataSourceSuite) TestResolveRelativeFileInclude(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	expContent := "example content\n"
-	c.Assert(ioutil.WriteFile(target, []byte(expContent), os.ModePerm), gc.IsNil)
+	c.Assert(os.WriteFile(target, []byte(expContent), os.ModePerm), gc.IsNil)
 
 	ds := &resolvedBundleDataSource{
 		basePath: relTo,
@@ -226,7 +237,7 @@ func assertIsDir(c *gc.C, path string) {
 
 func archiveBundleDirPath(c *gc.C, name string) string {
 	src := filepath.Join("internal/test-charm-repo/bundle", name, "bundle.yaml")
-	srcYaml, err := ioutil.ReadFile(src)
+	srcYaml, err := os.ReadFile(src)
 	c.Assert(err, gc.IsNil)
 
 	dstPath := filepath.Join(c.MkDir(), "bundle.zip")

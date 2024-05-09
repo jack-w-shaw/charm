@@ -49,12 +49,10 @@ type BundleData struct {
 	// Series holds the default series to use when
 	// the bundle deploys applications. A series defined for an application
 	// takes precedence.
-	// Series and Base cannot be mixed.
 	Series string `bson:",omitempty" json:",omitempty" yaml:",omitempty"`
 
 	// Base holds the default base to use when the bundle deploys
 	// applications. A base defined for an application takes precedence.
-	// Series and Base cannot be mixed.
 	DefaultBase string `bson:"default-base,omitempty" json:"default-base,omitempty" yaml:"default-base,omitempty"`
 
 	// Relations holds a slice of 2-element slices,
@@ -104,11 +102,9 @@ type ApplicationSpec struct {
 	Revision *int `bson:"revision,omitempty" yaml:"revision,omitempty" json:"revision,omitempty"`
 
 	// Series is the series to use when deploying the application.
-	// Series and Base cannot be mixed.
 	Series string `bson:",omitempty" yaml:",omitempty" json:",omitempty"`
 
 	// Base is the base to use when deploying the application.
-	// Series and Base cannot be mixed.
 	Base string `bson:",omitempty" yaml:",omitempty" json:",omitempty"`
 
 	// Resources is the set of resource revisions to deploy for the
@@ -355,7 +351,11 @@ type OfferSpec struct {
 // The returned data is not verified - call Verify to ensure
 // that it is OK.
 func ReadBundleData(r io.Reader) (*BundleData, error) {
-	bd, _, err := readBaseFromMultidocBundle(r)
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	bd, _, err := readBaseFromMultidocBundle(b)
 	if err != nil {
 		return nil, err
 	}
@@ -370,8 +370,8 @@ func ReadBundleData(r io.Reader) (*BundleData, error) {
 //
 // Clients that are interested in reading multi-doc bundle data should use the
 // new helpers: LocalBundleDataSource and StreamBundleDataSource.
-func readBaseFromMultidocBundle(r io.Reader) (*BundleData, bool, error) {
-	parts, err := parseBundleParts(r)
+func readBaseFromMultidocBundle(b []byte) (*BundleData, bool, error) {
+	parts, err := parseBundleParts(b)
 	if err != nil {
 		return nil, false, err
 	}

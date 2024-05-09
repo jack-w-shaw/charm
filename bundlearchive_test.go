@@ -5,7 +5,6 @@ package charm_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -21,35 +20,37 @@ type BundleArchiveSuite struct {
 	archivePath string
 }
 
+const bundleName = "wordpress-simple"
+
 func (s *BundleArchiveSuite) SetUpSuite(c *gc.C) {
-	s.archivePath = archivePath(c, readBundleDir(c, "wordpress-simple"))
+	s.archivePath = archivePath(c, readBundleDir(c, bundleName))
 }
 
 func (s *BundleArchiveSuite) TestReadBundleArchive(c *gc.C) {
 	archive, err := charm.ReadBundleArchive(s.archivePath)
 	c.Assert(err, gc.IsNil)
-	checkWordpressBundle(c, archive, s.archivePath)
+	checkWordpressBundle(c, archive, s.archivePath, bundleName)
 }
 
 func (s *BundleArchiveSuite) TestReadBundleArchiveBytes(c *gc.C) {
-	data, err := ioutil.ReadFile(s.archivePath)
+	data, err := os.ReadFile(s.archivePath)
 	c.Assert(err, gc.IsNil)
 
 	archive, err := charm.ReadBundleArchiveBytes(data)
 	c.Assert(err, gc.IsNil)
 	c.Assert(archive.ContainsOverlays(), jc.IsFalse)
-	checkWordpressBundle(c, archive, "")
+	checkWordpressBundle(c, archive, "", bundleName)
 }
 
 func (s *BundleArchiveSuite) TestReadMultiDocBundleArchiveBytes(c *gc.C) {
 	path := archivePath(c, readBundleDir(c, "wordpress-simple-multidoc"))
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	c.Assert(err, gc.IsNil)
 
 	archive, err := charm.ReadBundleArchiveBytes(data)
 	c.Assert(err, gc.IsNil)
 	c.Assert(archive.ContainsOverlays(), jc.IsTrue)
-	checkWordpressBundle(c, archive, "")
+	checkWordpressBundle(c, archive, "", "wordpress-simple-multidoc")
 }
 
 func (s *BundleArchiveSuite) TestReadBundleArchiveFromReader(c *gc.C) {
@@ -61,7 +62,7 @@ func (s *BundleArchiveSuite) TestReadBundleArchiveFromReader(c *gc.C) {
 
 	archive, err := charm.ReadBundleArchiveFromReader(f, info.Size())
 	c.Assert(err, gc.IsNil)
-	checkWordpressBundle(c, archive, "")
+	checkWordpressBundle(c, archive, "", bundleName)
 }
 
 func (s *BundleArchiveSuite) TestReadBundleArchiveWithoutBundleYAML(c *gc.C) {

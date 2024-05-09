@@ -23,7 +23,7 @@ func (s *BundleDirSuite) TestReadBundleDir(c *gc.C) {
 	path := bundleDirPath(c, "wordpress-simple")
 	dir, err := charm.ReadBundleDir(path)
 	c.Assert(err, gc.IsNil)
-	checkWordpressBundle(c, dir, path)
+	checkWordpressBundle(c, dir, path, "wordpress-simple")
 }
 
 func (s *BundleDirSuite) TestReadBundleDirWithoutREADME(c *gc.C) {

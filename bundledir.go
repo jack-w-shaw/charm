@@ -6,16 +6,16 @@ package charm
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
 // BundleDir defines a bundle from a given directory.
 type BundleDir struct {
-	Path   string
-	data   *BundleData
-	readMe string
+	Path        string
+	data        *BundleData
+	bundleBytes []byte
+	readMe      string
 
 	containsOverlays bool
 }
@@ -27,16 +27,16 @@ var _ Bundle = (*BundleDir)(nil)
 // bundle directory. It does not verify the bundle data.
 func ReadBundleDir(path string) (dir *BundleDir, err error) {
 	dir = &BundleDir{Path: path}
-	file, err := os.Open(dir.join("bundle.yaml"))
+	b, err := os.ReadFile(dir.join("bundle.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	dir.data, dir.containsOverlays, err = readBaseFromMultidocBundle(file)
-	file.Close()
+	dir.bundleBytes = b
+	dir.data, dir.containsOverlays, err = readBaseFromMultidocBundle(b)
 	if err != nil {
 		return nil, err
 	}
-	readMe, err := ioutil.ReadFile(dir.join("README.md"))
+	readMe, err := os.ReadFile(dir.join("README.md"))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read README file: %v", err)
 	}
@@ -47,6 +47,11 @@ func ReadBundleDir(path string) (dir *BundleDir, err error) {
 // Data returns the contents of the bundle's bundle.yaml file.
 func (dir *BundleDir) Data() *BundleData {
 	return dir.data
+}
+
+// BundleBytes implements Bundle.BundleBytes
+func (dir *BundleDir) BundleBytes() []byte {
+	return dir.bundleBytes
 }
 
 // ReadMe returns the contents of the bundle's README.md file.
