@@ -12,13 +12,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/juju/errors"
 	jc "github.com/juju/testing/checkers"
 	"github.com/juju/version/v2"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
 
 	"github.com/juju/charm/v13"
-	"github.com/juju/charm/v13/assumes"
 	"github.com/juju/charm/v13/resource"
 )
 
@@ -83,15 +83,13 @@ func (s *MetaSuite) TestValidTermFormat(c *gc.C) {
 
 	for i, s := range valid {
 		c.Logf("valid test %d: %s", i, s)
-		meta := charm.Meta{Terms: []string{s}}
-		err := meta.Check(charm.FormatV1)
+		_, err := charm.ParseTerm(s)
 		c.Check(err, jc.ErrorIsNil)
 	}
 
 	for i, s := range invalid {
 		c.Logf("invalid test %d: %s", i, s)
-		meta := charm.Meta{Terms: []string{s}}
-		err := meta.Check(charm.FormatV1)
+		_, err := charm.ParseTerm(s)
 		c.Check(err, gc.NotNil)
 	}
 }
@@ -177,8 +175,13 @@ func (s *MetaSuite) TestCheckTerms(c *gc.C) {
 	}
 	for i, test := range tests {
 		c.Logf("running test %v: %v", i, test.about)
-		meta := charm.Meta{Terms: test.terms}
-		err := meta.Check(charm.FormatV1)
+		var err error
+		for _, term := range test.terms {
+			_, err = charm.ParseTerm(term)
+			if err != nil {
+				break
+			}
+		}
 		if test.expectError == "" {
 			c.Check(err, jc.ErrorIsNil)
 		} else {
@@ -280,8 +283,6 @@ func (s *MetaSuite) TestReadCategory(c *gc.C) {
 func (s *MetaSuite) TestReadTerms(c *gc.C) {
 	meta, err := charm.ReadMeta(repoMeta(c, "terms"))
 	c.Assert(err, jc.ErrorIsNil)
-	err = meta.Check(charm.FormatV1)
-	c.Assert(err, jc.ErrorIsNil)
 	c.Assert(meta.Terms, jc.DeepEquals, []string{"term1/1", "term2", "owner/term3/1"})
 }
 
@@ -297,7 +298,7 @@ func (s *MetaSuite) TestCheckReadInvalidTerms(c *gc.C) {
 	reader := strings.NewReader(metaDataWithInvalidTermsId)
 	meta, err := charm.ReadMeta(reader)
 	c.Assert(err, jc.ErrorIsNil)
-	err = meta.Check(charm.FormatV1)
+	err = meta.Check(charm.FormatV2, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, `wrong owner format "!!!"`)
 }
 
@@ -319,7 +320,7 @@ func (s *MetaSuite) TestCheckSubordinateWithoutContainerRelation(c *gc.C) {
 	hackYaml["subordinate"] = true
 	meta, err := charm.ReadMeta(hackYaml.Reader())
 	c.Assert(err, jc.ErrorIsNil)
-	err = meta.Check(charm.FormatV1)
+	err = meta.Check(charm.FormatV2, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, "subordinate charm \"dummy\" lacks \"requires\" relation with container scope")
 }
 
@@ -521,7 +522,7 @@ func (s *MetaSuite) TestCheckRelationsConstraints(c *gc.C) {
 		meta, err := charm.ReadMeta(strings.NewReader(s))
 		c.Assert(err, jc.ErrorIsNil)
 		c.Assert(meta, gc.NotNil)
-		err = meta.Check(charm.FormatV1)
+		err = meta.Check(charm.FormatV2, charm.SelectionBases)
 		if e != "" {
 			c.Assert(err, gc.ErrorMatches, e)
 		} else {
@@ -549,28 +550,11 @@ requires:
 }
 
 // dummyMetadata contains a minimally valid charm metadata.yaml
-// for testing valid and invalid series.
 const dummyMetadata = "name: a\nsummary: b\ndescription: c"
 
-func (s *MetaSuite) TestSeries(c *gc.C) {
-	// series not specified
-	meta, err := charm.ReadMeta(strings.NewReader(dummyMetadata))
-	c.Assert(err, gc.IsNil)
-	c.Check(meta.Series, gc.HasLen, 0)
-	charmMeta := fmt.Sprintf("%s\nseries:", dummyMetadata)
-	for _, seriesName := range []string{"precise", "trusty", "plan9"} {
-		charmMeta = fmt.Sprintf("%s\n    - %s", charmMeta, seriesName)
-	}
-	meta, err = charm.ReadMeta(strings.NewReader(charmMeta))
-	c.Assert(err, gc.IsNil)
-	c.Assert(meta.Series, gc.DeepEquals, []string{"precise", "trusty", "plan9"})
-}
-
 func (s *MetaSuite) TestMinJujuVersion(c *gc.C) {
-	// series not specified
 	meta, err := charm.ReadMeta(strings.NewReader(dummyMetadata))
 	c.Assert(err, gc.IsNil)
-	c.Check(meta.Series, gc.HasLen, 0)
 	charmMeta := fmt.Sprintf("%s\nmin-juju-version: ", dummyMetadata)
 	vals := []version.Number{
 		{Major: 1, Minor: 25},
@@ -611,7 +595,7 @@ func (s *MetaSuite) TestCheckMismatchedRelationName(c *gc.C) {
 			},
 		},
 	}
-	err := meta.Check(charm.FormatV1)
+	err := meta.Check(charm.FormatV2, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, `charm "foo" has mismatched role "peer"; expected "provider"`)
 }
 
@@ -628,7 +612,7 @@ func (s *MetaSuite) TestCheckMismatchedRole(c *gc.C) {
 			},
 		},
 	}
-	err := meta.Check(charm.FormatV1)
+	err := meta.Check(charm.FormatV2, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, `charm "foo" has mismatched relation name ""; expected "foo"`)
 }
 
@@ -639,7 +623,7 @@ func (s *MetaSuite) TestCheckMismatchedExtraBindingName(c *gc.C) {
 			"foo": {Name: "bar"},
 		},
 	}
-	err := meta.Check(charm.FormatV1)
+	err := meta.Check(charm.FormatV2, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, `charm "foo" has invalid extra bindings: mismatched extra binding name: got "bar", expected "foo"`)
 }
 
@@ -648,12 +632,12 @@ func (s *MetaSuite) TestCheckEmptyNameKeyOrEmptyExtraBindingName(c *gc.C) {
 		Name:          "foo",
 		ExtraBindings: map[string]charm.ExtraBinding{"": {Name: "bar"}},
 	}
-	err := meta.Check(charm.FormatV1)
+	err := meta.Check(charm.FormatV2, charm.SelectionBases)
 	expectedError := `charm "foo" has invalid extra bindings: missing binding name`
 	c.Assert(err, gc.ErrorMatches, expectedError)
 
 	meta.ExtraBindings = map[string]charm.ExtraBinding{"bar": {Name: ""}}
-	err = meta.Check(charm.FormatV1)
+	err = meta.Check(charm.FormatV2, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, expectedError)
 }
 
@@ -1001,8 +985,6 @@ extra-bindings:
     extraFoo1:
 categories: [c1, c1]
 tags: [t1, t2]
-series:
-    - someseries
 resources:
     foo:
         description: 'a description'
@@ -1156,61 +1138,6 @@ devices:
 	}, gc.Commentf("meta: %+v", meta))
 }
 
-func (s *MetaSuite) TestDeployment(c *gc.C) {
-	meta, err := charm.ReadMeta(strings.NewReader(`
-name: a
-summary: b
-description: c
-series:
-    - kubernetes
-deployment:
-    type: stateless
-    mode: operator
-    service: loadbalancer
-    min-version: "1.15"
-`))
-	c.Assert(err, gc.IsNil)
-	c.Assert(meta.Deployment, gc.DeepEquals, &charm.Deployment{
-		DeploymentType: "stateless",
-		DeploymentMode: "operator",
-		ServiceType:    "loadbalancer",
-		MinVersion:     "1.15",
-	}, gc.Commentf("meta: %+v", meta))
-}
-
-func (s *MetaSuite) TestCheckDeploymentErrors(c *gc.C) {
-	prefix := `
-name: a
-summary: b
-description: c
-deployment:
-`[1:]
-
-	tests := []testErrorPayload{{
-		desc: "invalid deployment type",
-		yaml: "        type: foo",
-		err:  `metadata: deployment.type: unexpected value "foo"`,
-	}, {
-		desc: "invalid deployment mode",
-		yaml: "        mode: foo",
-		err:  `metadata: deployment.mode: unexpected value "foo"`,
-	}, {
-		desc: "invalid service type",
-		yaml: "        service: foo",
-		err:  `metadata: deployment.service: unexpected value "foo"`,
-	}, {
-		desc: "invalid service type for series",
-		yaml: "        service: cluster\nseries:\n        - xenial",
-		err:  `charms with deployment metadata only supported for "kubernetes"`,
-	}, {
-		desc: "missing series",
-		yaml: "        service: cluster",
-		err:  `charm with deployment metadata must declare at least one series`,
-	}}
-
-	testErrors(c, prefix, tests)
-}
-
 type testErrorPayload struct {
 	desc string
 	yaml string
@@ -1232,7 +1159,7 @@ func testCheckErrors(c *gc.C, prefix string, tests []testErrorPayload) {
 		c.Logf("\n%s\n", prefix+test.yaml)
 		meta, err := charm.ReadMeta(strings.NewReader(prefix + test.yaml))
 		c.Assert(err, jc.ErrorIsNil)
-		err = meta.Check(charm.FormatV1)
+		err = meta.Check(charm.FormatV2, charm.SelectionBases)
 		c.Assert(err, gc.ErrorMatches, test.err)
 	}
 }
@@ -1946,47 +1873,8 @@ var _ = gc.Suite(&FormatMetaSuite{})
 func (FormatMetaSuite) TestCheckV1(c *gc.C) {
 	meta := charm.Meta{}
 	err := meta.Check(charm.FormatV1)
-	c.Assert(err, jc.ErrorIsNil)
-}
-
-func (FormatMetaSuite) TestCheckV1WithAssumes(c *gc.C) {
-	meta := charm.Meta{
-		Assumes: new(assumes.ExpressionTree),
-	}
-	err := meta.Check(charm.FormatV1)
-	c.Assert(err, gc.ErrorMatches, `assumes in metadata v1 not valid`)
-}
-
-func (FormatMetaSuite) TestCheckV1WithContainers(c *gc.C) {
-	meta := charm.Meta{
-		Containers: map[string]charm.Container{
-			"foo": {
-				Resource: "test-os",
-				Mounts: []charm.Mount{{
-					Storage:  "a",
-					Location: "/b/",
-				}},
-			},
-		},
-	}
-	err := meta.Check(charm.FormatV1)
-	c.Assert(err, gc.ErrorMatches, `containers without a manifest.yaml not valid`)
-}
-
-func (FormatMetaSuite) TestCheckV1WithContainersWithManifest(c *gc.C) {
-	meta := charm.Meta{
-		Containers: map[string]charm.Container{
-			"foo": {
-				Resource: "test-os",
-				Mounts: []charm.Mount{{
-					Storage:  "a",
-					Location: "/b/",
-				}},
-			},
-		},
-	}
-	err := meta.Check(charm.FormatV1, charm.SelectionManifest)
-	c.Assert(err, gc.ErrorMatches, `containers in metadata v1 not valid`)
+	c.Assert(err, jc.ErrorIs, errors.NotSupported)
+	c.Assert(err, gc.ErrorMatches, `charm metadata format v1 not supported`)
 }
 
 func (FormatMetaSuite) TestCheckV2(c *gc.C) {
@@ -2001,36 +1889,12 @@ func (FormatMetaSuite) TestCheckV2NoReasons(c *gc.C) {
 	c.Assert(err, gc.ErrorMatches, `metadata v2 without manifest.yaml not valid`)
 }
 
-func (FormatMetaSuite) TestCheckV2WithSeries(c *gc.C) {
-	meta := charm.Meta{
-		Series: []string{"bionic"},
-	}
-	err := meta.Check(charm.FormatV2, charm.SelectionManifest, charm.SelectionBases)
-	c.Assert(err, gc.ErrorMatches, `metadata v2 manifest.yaml with series slice not valid`)
-}
-
-func (FormatMetaSuite) TestCheckV2WithSeriesWithoutManifest(c *gc.C) {
-	meta := charm.Meta{
-		Series: []string{"bionic"},
-	}
-	err := meta.Check(charm.FormatV2, charm.SelectionBases)
-	c.Assert(err, gc.ErrorMatches, `series slice in metadata v2 not valid`)
-}
-
 func (FormatMetaSuite) TestCheckV2WithMinJujuVersion(c *gc.C) {
 	meta := charm.Meta{
 		MinJujuVersion: version.MustParse("2.0.0"),
 	}
 	err := meta.Check(charm.FormatV2, charm.SelectionManifest, charm.SelectionBases)
 	c.Assert(err, gc.ErrorMatches, `min-juju-version in metadata v2 not valid`)
-}
-
-func (FormatMetaSuite) TestCheckV2WithDeployment(c *gc.C) {
-	meta := charm.Meta{
-		Deployment: &charm.Deployment{},
-	}
-	err := meta.Check(charm.FormatV2, charm.SelectionManifest, charm.SelectionBases)
-	c.Assert(err, gc.ErrorMatches, `deployment in metadata v2 not valid`)
 }
 
 func (s *MetaSuite) TestCharmUser(c *gc.C) {
