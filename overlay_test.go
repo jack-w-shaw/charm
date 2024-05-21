@@ -4,7 +4,6 @@
 package charm_test
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -954,6 +953,10 @@ func (s srcWithFakeIncludeResolver) Parts() []*charm.BundleDataPart {
 	return s.src.Parts()
 }
 
+func (s srcWithFakeIncludeResolver) BundleBytes() []byte {
+	return s.src.BundleBytes()
+}
+
 func (s srcWithFakeIncludeResolver) BasePath() string {
 	return s.src.BasePath()
 }
@@ -987,7 +990,7 @@ func testBundleMergeResult(c *gc.C, src, exp string) {
 }
 
 func mustWriteFile(c *gc.C, path, content string) {
-	err := ioutil.WriteFile(path, []byte(content), os.ModePerm)
+	err := os.WriteFile(path, []byte(content), os.ModePerm)
 	c.Assert(err, gc.IsNil)
 }
 

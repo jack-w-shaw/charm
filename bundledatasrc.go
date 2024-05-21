@@ -6,7 +6,6 @@ package charm
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,17 +54,23 @@ type BundleDataPart struct {
 // list of composable parts.
 type BundleDataSource interface {
 	Parts() []*BundleDataPart
+	BundleBytes() []byte
 	BasePath() string
 	ResolveInclude(path string) ([]byte, error)
 }
 
 type resolvedBundleDataSource struct {
-	basePath string
-	parts    []*BundleDataPart
+	basePath    string
+	bundleBytes []byte
+	parts       []*BundleDataPart
 }
 
 func (s *resolvedBundleDataSource) Parts() []*BundleDataPart {
 	return s.parts
+}
+
+func (s *resolvedBundleDataSource) BundleBytes() []byte {
+	return s.bundleBytes
 }
 
 func (s *resolvedBundleDataSource) BasePath() string {
@@ -95,7 +100,7 @@ func (s *resolvedBundleDataSource) ResolveInclude(path string) ([]byte, error) {
 		return nil, errors.Errorf("include path %q resolves to a folder", absPath)
 	}
 
-	data, err := ioutil.ReadFile(absPath)
+	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, errors.Annotatef(err, "reading include file at %q", absPath)
 	}
@@ -131,15 +136,20 @@ func LocalBundleDataSource(path string) (BundleDataSource, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	parts, pErr := parseBundleParts(f)
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	parts, pErr := parseBundleParts(b)
 	if pErr == nil {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return nil, errors.Annotatef(err, "resolve absolute path to %s", path)
 		}
 		return &resolvedBundleDataSource{
-			basePath: filepath.Dir(absPath),
-			parts:    parts,
+			basePath:    filepath.Dir(absPath),
+			parts:       parts,
+			bundleBytes: b,
 		}, nil
 	}
 
@@ -159,10 +169,15 @@ func LocalBundleDataSource(path string) (BundleDataSource, error) {
 	}
 	defer func() { _ = r.Close() }()
 
-	if parts, pErr = parseBundleParts(r); pErr == nil {
+	b, err = io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	if parts, pErr = parseBundleParts(b); pErr == nil {
 		return &resolvedBundleDataSource{
-			basePath: "", // use empty base path for archives
-			parts:    parts,
+			basePath:    "", // use empty base path for archives
+			parts:       parts,
+			bundleBytes: b,
 		}, nil
 	}
 
@@ -185,20 +200,19 @@ func isNotExistsError(err error) bool {
 // StreamBundleDataSource reads a (potentially multi-part) bundle from r and
 // returns a BundleDataSource for it.
 func StreamBundleDataSource(r io.Reader, basePath string) (BundleDataSource, error) {
-	parts, err := parseBundleParts(r)
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	parts, err := parseBundleParts(b)
 	if err != nil {
 		return nil, errors.NotValidf("cannot unmarshal bundle contents: %v", err)
 	}
 
-	return &resolvedBundleDataSource{parts: parts, basePath: basePath}, nil
+	return &resolvedBundleDataSource{parts: parts, bundleBytes: b, basePath: basePath}, nil
 }
 
-func parseBundleParts(r io.Reader) ([]*BundleDataPart, error) {
-	b, err := ioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
+func parseBundleParts(b []byte) ([]*BundleDataPart, error) {
 	var (
 		// Ideally, we would be using a single reader and we would
 		// rewind it to read each block in structured and raw mode.
@@ -216,7 +230,7 @@ func parseBundleParts(r io.Reader) ([]*BundleDataPart, error) {
 	for docIdx := 0; ; docIdx++ {
 		var part BundleDataPart
 
-		err = structDec.Decode(&part.Data)
+		err := structDec.Decode(&part.Data)
 		if err == io.EOF {
 			break
 		} else if err != nil && !strings.HasPrefix(err.Error(), "yaml: unmarshal errors:") {

@@ -4,6 +4,9 @@
 package charm_test
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
@@ -23,7 +26,7 @@ func (*BundleSuite) TestReadBundleDir(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(b.ContainsOverlays(), jc.IsFalse)
 	c.Assert(b, gc.FitsTypeOf, (*charm.BundleDir)(nil))
-	checkWordpressBundle(c, b, path)
+	checkWordpressBundle(c, b, path, "wordpress-simple")
 }
 
 func (*BundleSuite) TestReadMultiDocBundleDir(c *gc.C) {
@@ -32,7 +35,7 @@ func (*BundleSuite) TestReadMultiDocBundleDir(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(b.ContainsOverlays(), jc.IsTrue)
 	c.Assert(b, gc.FitsTypeOf, (*charm.BundleDir)(nil))
-	checkWordpressBundle(c, b, path)
+	checkWordpressBundle(c, b, path, "wordpress-simple-multidoc")
 }
 
 func (*BundleSuite) TestReadBundleArchive(c *gc.C) {
@@ -41,7 +44,7 @@ func (*BundleSuite) TestReadBundleArchive(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(b.ContainsOverlays(), jc.IsFalse)
 	c.Assert(b, gc.FitsTypeOf, (*charm.BundleDir)(nil))
-	checkWordpressBundle(c, b, path)
+	checkWordpressBundle(c, b, path, "wordpress-simple")
 }
 
 func (*BundleSuite) TestReadMultiDocBundleArchive(c *gc.C) {
@@ -50,10 +53,10 @@ func (*BundleSuite) TestReadMultiDocBundleArchive(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(b.ContainsOverlays(), jc.IsTrue)
 	c.Assert(b, gc.FitsTypeOf, (*charm.BundleDir)(nil))
-	checkWordpressBundle(c, b, path)
+	checkWordpressBundle(c, b, path, "wordpress-simple-multidoc")
 }
 
-func checkWordpressBundle(c *gc.C, b charm.Bundle, path string) {
+func checkWordpressBundle(c *gc.C, b charm.Bundle, path string, bundleName string) {
 	// Load the charms required by the bundle.
 	wordpressCharm := readCharmDir(c, "wordpress")
 	mysqlCharm := readCharmDir(c, "mysql")
@@ -87,6 +90,11 @@ func checkWordpressBundle(c *gc.C, b charm.Bundle, path string) {
 	case *charm.BundleDir:
 		c.Assert(b.Path, gc.Equals, path)
 	}
+
+	bundlePath := filepath.Join("internal/test-charm-repo/bundle", bundleName, "bundle.yaml")
+	raw, err := os.ReadFile(bundlePath)
+	c.Assert(err, jc.ErrorIsNil)
+	c.Assert(string(b.BundleBytes()), gc.Equals, string(raw))
 }
 
 func verifyOk(string) error {

@@ -6,7 +6,6 @@ package charm
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 
 	ziputil "github.com/juju/utils/v4/zip"
 )
@@ -14,9 +13,10 @@ import (
 type BundleArchive struct {
 	zopen zipOpener
 
-	Path   string
-	data   *BundleData
-	readMe string
+	Path        string
+	data        *BundleData
+	bundleBytes []byte
+	readMe      string
 
 	containsOverlays bool
 }
@@ -61,7 +61,12 @@ func readBundleArchive(zopen zipOpener) (*BundleArchive, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.data, a.containsOverlays, err = readBaseFromMultidocBundle(reader)
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	a.bundleBytes = b
+	a.data, a.containsOverlays, err = readBaseFromMultidocBundle(b)
 	reader.Close()
 	if err != nil {
 		return nil, err
@@ -70,7 +75,7 @@ func readBundleArchive(zopen zipOpener) (*BundleArchive, error) {
 	if err != nil {
 		return nil, err
 	}
-	readMe, err := ioutil.ReadAll(reader)
+	readMe, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +86,11 @@ func readBundleArchive(zopen zipOpener) (*BundleArchive, error) {
 // Data implements Bundle.Data.
 func (a *BundleArchive) Data() *BundleData {
 	return a.data
+}
+
+// BundleBytes implements Bundle.BundleBytes.
+func (a *BundleArchive) BundleBytes() []byte {
+	return a.bundleBytes
 }
 
 // ReadMe implements Bundle.ReadMe.
